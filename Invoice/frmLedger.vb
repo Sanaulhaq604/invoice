@@ -10,6 +10,147 @@ Public Class frmLedger
         DtpEnd.Value = Today.Date.AddDays(+1)
     End Sub
 
+    ' Ensure there is a DataGridViewButtonColumn at the right-most position for viewing images
+    Private Sub EnsureViewImageColumn()
+        Try
+            If DataGridView1.Columns.Contains("colViewImage") Then
+                ' Move it to the right-most position
+                Dim col = DataGridView1.Columns("colViewImage")
+                col.DisplayIndex = DataGridView1.Columns.Count - 1
+                Return
+            End If
+
+            Dim btnCol As New DataGridViewButtonColumn()
+            btnCol.Name = "colViewImage"
+            btnCol.HeaderText = ""
+            btnCol.Text = "View"
+            btnCol.UseColumnTextForButtonValue = True
+            btnCol.FlatStyle = FlatStyle.Standard
+            btnCol.Width = 70
+            DataGridView1.Columns.Add(btnCol)
+            btnCol.DisplayIndex = DataGridView1.Columns.Count - 1
+        Catch
+            ' ignore
+        End Try
+    End Sub
+
+    ' Populate the View Image button cells based on presence of image in images DB
+    Private Sub PopulateViewImageButtons()
+        Try
+            If DataGridView1.Rows.Count = 0 Then Return
+            For Each row As DataGridViewRow In DataGridView1.Rows
+                If row.IsNewRow Then Continue For
+                Dim dType As String = ""
+                Dim dNumber As String = ""
+                If DataGridView1.Columns.Contains("colType") Then dType = Convert.ToString(row.Cells("colType").Value)
+                If dType = "" AndAlso DataGridView1.Columns.Contains("Type") Then dType = Convert.ToString(row.Cells("Type").Value)
+                If DataGridView1.Columns.Contains("colDoc") Then dNumber = Convert.ToString(row.Cells("colDoc").Value)
+                If dNumber = "" AndAlso DataGridView1.Columns.Contains("Doc") Then dNumber = Convert.ToString(row.Cells("Doc").Value)
+
+                Dim btnCellIndex As Integer = -1
+                If DataGridView1.Columns.Contains("colViewImage") Then btnCellIndex = DataGridView1.Columns("colViewImage").Index
+
+                If btnCellIndex >= 0 Then
+                    If String.IsNullOrWhiteSpace(dType) Or String.IsNullOrWhiteSpace(dNumber) Then
+                        row.Cells(btnCellIndex).Value = ""
+                        row.Cells(btnCellIndex).ReadOnly = True
+                        row.Cells(btnCellIndex).Style.BackColor = Color.LightGray
+                        row.Cells(btnCellIndex).Style.ForeColor = Color.Gray
+                    Else
+                        Dim q As String = "SELECT TOP 1 IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc=" & dNumber
+                        Dim dtImg As DataTable = SQLImageData(q)
+                        If dtImg.Rows.Count > 0 AndAlso Not IsDBNull(dtImg.Rows(0)(0)) Then
+                            row.Cells(btnCellIndex).Value = "View"
+                            row.Cells(btnCellIndex).ReadOnly = False
+                            row.Cells(btnCellIndex).Style.BackColor = Color.White
+                            row.Cells(btnCellIndex).Style.ForeColor = Color.Black
+                        Else
+                            row.Cells(btnCellIndex).Value = ""
+                            row.Cells(btnCellIndex).ReadOnly = True
+                            row.Cells(btnCellIndex).Style.BackColor = Color.LightGray
+                            row.Cells(btnCellIndex).Style.ForeColor = Color.Gray
+                        End If
+                    End If
+                End If
+            Next
+        Catch ex As Exception
+            ' silent
+        End Try
+    End Sub
+
+    ' Handle clicks on view-image column
+    Private Sub DataGridView1_CellContentClick_OpenImage(sender As Object, e As DataGridViewCellEventArgs) Handles DataGridView1.CellContentClick
+        Try
+            If e.RowIndex < 0 Or e.ColumnIndex < 0 Then Return
+            If Not DataGridView1.Columns(e.ColumnIndex).Name = "colViewImage" Then Return
+            Dim cell = DataGridView1.Rows(e.RowIndex).Cells(e.ColumnIndex)
+            If cell.ReadOnly Then Return
+            If Convert.ToString(cell.Value).Trim <> "View" Then Return
+
+            Dim dType As String = ""
+            Dim dNumber As String = ""
+            If DataGridView1.Columns.Contains("colType") Then dType = Convert.ToString(DataGridView1.Rows(e.RowIndex).Cells("colType").Value)
+            If dType = "" AndAlso DataGridView1.Columns.Contains("Type") Then dType = Convert.ToString(DataGridView1.Rows(e.RowIndex).Cells("Type").Value)
+            If DataGridView1.Columns.Contains("colDoc") Then dNumber = Convert.ToString(DataGridView1.Rows(e.RowIndex).Cells("colDoc").Value)
+            If dNumber = "" AndAlso DataGridView1.Columns.Contains("Doc") Then dNumber = Convert.ToString(DataGridView1.Rows(e.RowIndex).Cells("Doc").Value)
+            If dType = "" Or dNumber = "" Then Return
+
+            Dim q As String = "SELECT IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc=" & dNumber
+            Dim dtImg As DataTable = SQLImageData(q)
+            If dtImg.Rows.Count = 0 Then Return
+            If IsDBNull(dtImg.Rows(0)(0)) Then Return
+            Dim img() As Byte = DirectCast(dtImg.Rows(0)(0), Byte())
+
+            Dim f As New ViewImage()
+            Using ms As New IO.MemoryStream(img)
+                Try
+                    Dim bmp = Image.FromStream(ms)
+                    ' If designer has pbBilty picturebox use it
+                    Dim found = f.Controls.Find("pbBilty", True)
+                    If found.Length > 0 AndAlso TypeOf found(0) Is PictureBox Then
+                        Dim pb As PictureBox = CType(found(0), PictureBox)
+                        pb.Image = bmp
+                        pb.SizeMode = PictureBoxSizeMode.Zoom
+                    Else
+                        ' couldn't find picturebox: show in default dialog (attempt)
+                        Dim tmp As New Form()
+                        tmp.StartPosition = FormStartPosition.CenterParent
+                        tmp.ClientSize = New Size(bmp.Width, bmp.Height)
+                        Dim pb2 As New PictureBox() With {.Image = bmp, .Dock = DockStyle.Fill, .SizeMode = PictureBoxSizeMode.Zoom}
+                        tmp.Controls.Add(pb2)
+                        tmp.ShowDialog()
+                        Return
+                    End If
+                    f.ShowDialog()
+                Catch ex As Exception
+                    MsgBox("Failed to load image: " & ex.Message)
+                End Try
+            End Using
+
+        Catch ex As Exception
+            ' ignore
+        End Try
+    End Sub
+
+    ' Resize narration column to fill available space and avoid horizontal scrolling
+    Private Sub AdjustNarrationWidth()
+        Try
+            If Not DataGridView1.Columns.Contains("colNarration") AndAlso Not DataGridView1.Columns.Contains("Narration") Then Return
+            Dim narrationColName = If(DataGridView1.Columns.Contains("colNarration"), "colNarration", "Narration")
+            Dim total = DataGridView1.ClientSize.Width - DataGridView1.RowHeadersWidth - 20
+            Dim otherWidth As Integer = 0
+            For Each c As DataGridViewColumn In DataGridView1.Columns
+                If c.Name = narrationColName Then Continue For
+                If Not c.Visible Then Continue For
+                otherWidth += c.Width
+            Next
+            Dim avail = total - otherWidth
+            If avail < 200 Then avail = 200
+            DataGridView1.Columns(narrationColName).Width = avail
+        Catch
+        End Try
+    End Sub
+
     Sub LastTally()
         Dim dt As DataTable = SQLData("select isnull((select top 1 date from ledgers where acid=" & txtAcID.Text & " and status=2 order by date desc),'2010-1-1') Date")
         Dim dat As Date = dt.Rows(0)(0)
@@ -108,6 +249,10 @@ Public Class frmLedger
         Dim dtTotals As DataTable = SQLData("select isnull(sum(debit),0) totDebit, isnull(sum(credit),0) totCredit from ledgers where acid= " & txtAcID.Text & "  and narration like '%" & txtDescription.Text & "%' AND TYPE like '" & txtDoc.Text & "%' and doc like '" & txtNumber.Text & "%'  and date>='" & dtpStart.Value & "'   and date<='" & DtpEnd.Value & "' and isnull(status,0) like '%" & match & "'  ")
         DataGridView1.DataSource = dt
         GRIDBACKCOLOR()
+        ' Add view-image column and populate per-row state
+        EnsureViewImageColumn()
+        PopulateViewImageButtons()
+        AdjustNarrationWidth()
 
         If DataGridView1.Rows.Count > 0 Then
             If rdTally.Checked Then
@@ -289,6 +434,11 @@ Public Class frmLedger
         EnsureClosingColumn(dt)
         EnsureClosingColumnInGrid()
         AdjustColumnWidths(True)
+
+        ' Ensure view-image column and populate buttons for periodic view too
+        EnsureViewImageColumn()
+        PopulateViewImageButtons()
+        AdjustNarrationWidth()
 
         txtTotalDebit.Text = Form3.Amt(dtTotals.Rows(0)("totDebit"))
         txtTotalCredit.Text = Form3.Amt(dtTotals.Rows(0)("totCredit"))
