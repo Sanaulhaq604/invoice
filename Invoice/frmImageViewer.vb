@@ -123,12 +123,46 @@ Public Class frmImageViewer
 
     End Sub
 
+    ' ======================== SHOW IMAGE WITH MAX HEIGHT ========================
+    Private _skipInitialAdjust As Boolean = False
+    Private _forceNoScroll As Boolean = False
+    Private _initializing As Boolean = False
+
+    ''' <summary>
+    ''' Load and show image with initial height equal to working area height (max visibility).
+    ''' </summary>
+    Public Sub ShowImageMaxHeight(imgBytes() As Byte)
+        LoadImage(imgBytes)
+        If _image Is Nothing Then
+            Me.ShowDialog()
+            Return
+        End If
+        Dim wa As Rectangle = Screen.FromControl(Me).WorkingArea
+        ' Compute zoom so the image fits both width and height of the working area (no scrollbars)
+        Dim zoomByH As Double = (wa.Height - _topBar.Height) / _image.Height
+        Dim zoomByW As Double = wa.Width / _image.Width
+        _zoom = Math.Min(zoomByH, zoomByW)
+        If _zoom <= 0 Then _zoom = 1.0
+        _skipInitialAdjust = True
+        ' During initial display enforce no-scroll fit; afterwards allow larger zoom
+        _initializing = True
+        _forceNoScroll = True
+        ResizeFormToZoom()
+        ' Position the form at the left-most side of the working area and top for initial show
+        Me.Left = wa.Left
+        Me.Top = wa.Top
+        ' Clear initialization flags so future zooms are unconstrained
+        _initializing = False
+        _forceNoScroll = False
+        Me.ShowDialog()
+    End Sub
+
     ' ======================== FORM SHOWN ========================
 
     Protected Overrides Sub OnShown(e As EventArgs)
         MyBase.OnShown(e)
-        ' On first show, fit the form to the image
-        AdjustFormToImage()
+        ' On first show, fit the form to the image unless overridden
+        If Not _skipInitialAdjust Then AdjustFormToImage()
     End Sub
 
     ' ======================== FIT FORM TO IMAGE (initial / fit button) ========================
@@ -191,12 +225,37 @@ Public Class frmImageViewer
         Dim finalW As Integer = Math.Min(desiredFormW, wa.Width)
         Dim finalH As Integer = Math.Min(desiredFormH, wa.Height)
 
+        ' If caller requested no scrollbars only during initialization, ensure the scaled image fits within the working area
+        If _forceNoScroll And _initializing Then
+            ' adjust zoom so both dimensions fit exactly
+            If scaledW > wa.Width Then
+                Dim adj As Double = wa.Width / _image.Width
+                _zoom = Math.Min(_zoom, adj)
+                scaledW = CInt(_image.Width * _zoom)
+            End If
+            If scaledH > wa.Height - _topBar.Height Then
+                Dim adj As Double = (wa.Height - _topBar.Height) / _image.Height
+                _zoom = Math.Min(_zoom, adj)
+                scaledH = CInt(_image.Height * _zoom)
+            End If
+            desiredFormW = scaledW
+            desiredFormH = scaledH + _topBar.Height
+            finalW = Math.Min(desiredFormW, wa.Width)
+            finalH = Math.Min(desiredFormH, wa.Height)
+        End If
+
         ' Skip re-centering if fullscreen (window is maximised)
         If Not _isFullscreen Then
             Me.Width = finalW
             Me.Height = finalH
-            Me.Left = wa.Left + (wa.Width - Me.Width) \ 2
-            Me.Top = wa.Top + (wa.Height - Me.Height) \ 2
+            If _forceNoScroll Then
+                ' position at left-top of working area
+                Me.Left = wa.Left
+                Me.Top = wa.Top
+            Else
+                Me.Left = wa.Left + (wa.Width - Me.Width) \ 2
+                Me.Top = wa.Top + (wa.Height - Me.Height) \ 2
+            End If
         End If
 
         ' Apply picture box size and image
@@ -204,10 +263,13 @@ Public Class frmImageViewer
         _pictureBox.Location = New Point(0, 0)
         _pictureBox.Image = _image
 
-        ' Scroll panel: enable scrolling when image exceeds visible area
+        ' Scroll panel: enable scrolling when image exceeds visible area unless forced off
         _scrollPanel.AutoScrollMinSize = New Size(scaledW, scaledH)
-        _scrollPanel.AutoScroll = (scaledH > _scrollPanel.ClientSize.Height OrElse
-                                   scaledW > _scrollPanel.ClientSize.Width)
+        If _forceNoScroll Then
+            _scrollPanel.AutoScroll = False
+        Else
+            _scrollPanel.AutoScroll = (scaledH > _scrollPanel.ClientSize.Height OrElse scaledW > _scrollPanel.ClientSize.Width)
+        End If
 
     End Sub
 

@@ -23,10 +23,13 @@ Public Class frmLedger
             Dim btnCol As New DataGridViewButtonColumn()
             btnCol.Name = "colViewImage"
             btnCol.HeaderText = ""
-            btnCol.Text = "View"
-            btnCol.UseColumnTextForButtonValue = True
-            btnCol.FlatStyle = FlatStyle.Standard
-            btnCol.Width = 70
+            btnCol.UseColumnTextForButtonValue = False ' we set text per-row
+            btnCol.FlatStyle = FlatStyle.Flat
+            btnCol.Width = 84
+            btnCol.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+            btnCol.DefaultCellStyle.Padding = New Padding(6, 4, 6, 4)
+            btnCol.DefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240)
+            btnCol.DefaultCellStyle.ForeColor = Color.Black
             DataGridView1.Columns.Add(btnCol)
             btnCol.DisplayIndex = DataGridView1.Columns.Count - 1
         Catch
@@ -52,18 +55,20 @@ Public Class frmLedger
 
                 If btnCellIndex >= 0 Then
                     If String.IsNullOrWhiteSpace(dType) Or String.IsNullOrWhiteSpace(dNumber) Then
-                        row.Cells(btnCellIndex).Value = ""
+                        row.Cells(btnCellIndex).Value = Nothing
                         row.Cells(btnCellIndex).ReadOnly = True
-                        row.Cells(btnCellIndex).Style.BackColor = Color.LightGray
-                        row.Cells(btnCellIndex).Style.ForeColor = Color.Gray
+                        row.Cells(btnCellIndex).Style.BackColor = Color.White
+                        row.Cells(btnCellIndex).Style.ForeColor = Color.Black
                     Else
-                        Dim q As String = "SELECT TOP 1 IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc=" & dNumber
+                        Dim q As String = "SELECT TOP 1 IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
                         Dim dtImg As DataTable = SQLImageData(q)
                         If dtImg.Rows.Count > 0 AndAlso Not IsDBNull(dtImg.Rows(0)(0)) Then
                             row.Cells(btnCellIndex).Value = "View"
                             row.Cells(btnCellIndex).ReadOnly = False
-                            row.Cells(btnCellIndex).Style.BackColor = Color.White
-                            row.Cells(btnCellIndex).Style.ForeColor = Color.Black
+                            row.Cells(btnCellIndex).Style.BackColor = Color.FromArgb(0, 122, 204)
+                            row.Cells(btnCellIndex).Style.ForeColor = Color.White
+                            row.Cells(btnCellIndex).Style.Font = New Font(DataGridView1.Font, FontStyle.Bold)
+                            row.Cells(btnCellIndex).Style.Alignment = DataGridViewContentAlignment.MiddleCenter
                         Else
                             row.Cells(btnCellIndex).Value = ""
                             row.Cells(btnCellIndex).ReadOnly = True
@@ -79,7 +84,7 @@ Public Class frmLedger
     End Sub
 
     ' Handle clicks on view-image column
-    Private Sub DataGridView1_CellContentClick_OpenImage(sender As Object, e As DataGridViewCellEventArgs) Handles DataGridView1.CellContentClick
+    Private Sub DataGridView1_CellContentClick_OpenImage(sender As Object, e As DataGridViewCellEventArgs) Handles DataGridView1.CellContentClick, DataGridView1.CellClick
         Try
             If e.RowIndex < 0 Or e.ColumnIndex < 0 Then Return
             If Not DataGridView1.Columns(e.ColumnIndex).Name = "colViewImage" Then Return
@@ -95,40 +100,109 @@ Public Class frmLedger
             If dNumber = "" AndAlso DataGridView1.Columns.Contains("Doc") Then dNumber = Convert.ToString(DataGridView1.Rows(e.RowIndex).Cells("Doc").Value)
             If dType = "" Or dNumber = "" Then Return
 
-            Dim q As String = "SELECT IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc=" & dNumber
+            Dim q As String = "SELECT IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
             Dim dtImg As DataTable = SQLImageData(q)
-            If dtImg.Rows.Count = 0 Then Return
-            If IsDBNull(dtImg.Rows(0)(0)) Then Return
+            If dtImg.Rows.Count = 0 Then
+                MsgBox("No image found for type='" & dType & "' doc='" & dNumber & "'. (SQL: " & q & ")")
+                Return
+            End If
+            If IsDBNull(dtImg.Rows(0)(0)) Then
+                MsgBox("Image is NULL for type='" & dType & "' doc='" & dNumber & "'. (SQL: " & q & ")")
+                Return
+            End If
             Dim img() As Byte = DirectCast(dtImg.Rows(0)(0), Byte())
 
-            Dim f As New ViewImage()
-            Using ms As New IO.MemoryStream(img)
-                Try
-                    Dim bmp = Image.FromStream(ms)
-                    ' If designer has pbBilty picturebox use it
-                    Dim found = f.Controls.Find("pbBilty", True)
-                    If found.Length > 0 AndAlso TypeOf found(0) Is PictureBox Then
-                        Dim pb As PictureBox = CType(found(0), PictureBox)
-                        pb.Image = bmp
-                        pb.SizeMode = PictureBoxSizeMode.Zoom
-                    Else
-                        ' couldn't find picturebox: show in default dialog (attempt)
+            ' Use the richer frmImageViewer if available; fall back to simple view
+            Try
+                Dim wa = Screen.FromControl(Me).WorkingArea
+                Dim docId As Integer = 0
+                Dim parsed As Boolean = Integer.TryParse(dNumber, docId)
+                ' Diagnostic: confirm bytes length
+                If img Is Nothing Then
+                    MsgBox("Image byte array is Nothing for type='" & dType & "' doc='" & dNumber & "'.")
+                    Return
+                End If
+                MsgBox("Opening image: type='" & dType & "' doc='" & dNumber & "' bytes=" & img.Length)
+
+                Dim viewer As New frmImageViewer(docId, dType)
+                ' Use the specialized show method to make initial height = working area height
+                viewer.ShowImageMaxHeight(img)
+            Catch ex As Exception
+                MsgBox("Error showing image: " & ex.Message & vbCrLf & "SQL: " & q)
+                ' Fallback: simple picturebox dialog
+                Using ms2 As New IO.MemoryStream(img)
+                    Try
+                        Dim bmp = Image.FromStream(ms2)
                         Dim tmp As New Form()
                         tmp.StartPosition = FormStartPosition.CenterParent
-                        tmp.ClientSize = New Size(bmp.Width, bmp.Height)
+                        tmp.ClientSize = New Size(Math.Min(bmp.Width, Screen.PrimaryScreen.WorkingArea.Width), Math.Min(bmp.Height, Screen.PrimaryScreen.WorkingArea.Height))
                         Dim pb2 As New PictureBox() With {.Image = bmp, .Dock = DockStyle.Fill, .SizeMode = PictureBoxSizeMode.Zoom}
                         tmp.Controls.Add(pb2)
                         tmp.ShowDialog()
-                        Return
-                    End If
-                    f.ShowDialog()
-                Catch ex As Exception
-                    MsgBox("Failed to load image: " & ex.Message)
-                End Try
-            End Using
+                    Catch ex2 As Exception
+                        MsgBox("Failed to load image in fallback: " & ex2.Message)
+                    End Try
+                End Using
+            End Try
 
         Catch ex As Exception
             ' ignore
+        End Try
+    End Sub
+
+    ' Also handle mouse clicks explicitly to ensure button clicks are captured
+    Private Sub DataGridView1_CellMouseClick(sender As Object, e As DataGridViewCellMouseEventArgs) Handles DataGridView1.CellMouseClick
+        Try
+            If e.RowIndex < 0 Or e.ColumnIndex < 0 Then Return
+            If Not DataGridView1.Columns(e.ColumnIndex).Name = "colViewImage" Then Return
+            Dim cell = DataGridView1.Rows(e.RowIndex).Cells(e.ColumnIndex)
+            If cell Is Nothing Then Return
+            If Convert.ToString(cell.Value).Trim <> "View" Then
+                ' disabled/empty cell - nothing to do
+                Return
+            End If
+
+            ' call the same open logic used by content click
+            OpenImageForRow(e.RowIndex)
+        Catch
+        End Try
+    End Sub
+
+    Private Sub OpenImageForRow(rowIndex As Integer)
+        Try
+            If rowIndex < 0 Or rowIndex >= DataGridView1.Rows.Count Then Return
+            Dim row = DataGridView1.Rows(rowIndex)
+            Dim dType As String = ""
+            Dim dNumber As String = ""
+            If DataGridView1.Columns.Contains("colType") Then dType = Convert.ToString(row.Cells("colType").Value)
+            If dType = "" AndAlso DataGridView1.Columns.Contains("Type") Then dType = Convert.ToString(row.Cells("Type").Value)
+            If DataGridView1.Columns.Contains("colDoc") Then dNumber = Convert.ToString(row.Cells("colDoc").Value)
+            If dNumber = "" AndAlso DataGridView1.Columns.Contains("Doc") Then dNumber = Convert.ToString(row.Cells("Doc").Value)
+            If dType = "" Or dNumber = "" Then Return
+
+            Dim q As String = "SELECT IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
+            Dim dtImg As DataTable = SQLImageData(q)
+            If dtImg.Rows.Count = 0 Then
+                MsgBox("No image found for type='" & dType & "' doc='" & dNumber & "'. (SQL: " & q & ")")
+                Return
+            End If
+            If IsDBNull(dtImg.Rows(0)(0)) Then
+                MsgBox("Image is NULL for type='" & dType & "' doc='" & dNumber & "'. (SQL: " & q & ")")
+                Return
+            End If
+            Dim img() As Byte = DirectCast(dtImg.Rows(0)(0), Byte())
+
+            If img Is Nothing OrElse img.Length = 0 Then
+                MsgBox("Image bytes empty for type='" & dType & "' doc='" & dNumber & "'.")
+                Return
+            End If
+
+            Dim docId As Integer = 0
+            Integer.TryParse(dNumber, docId)
+            Dim viewer As New frmImageViewer(docId, dType)
+            viewer.ShowImageMaxHeight(img)
+        Catch ex As Exception
+            MsgBox("Error opening image: " & ex.Message)
         End Try
     End Sub
 
@@ -137,16 +211,104 @@ Public Class frmLedger
         Try
             If Not DataGridView1.Columns.Contains("colNarration") AndAlso Not DataGridView1.Columns.Contains("Narration") Then Return
             Dim narrationColName = If(DataGridView1.Columns.Contains("colNarration"), "colNarration", "Narration")
-            Dim total = DataGridView1.ClientSize.Width - DataGridView1.RowHeadersWidth - 20
+
+            ' Disable autosizing to apply manual widths
+            DataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+            Dim total = DataGridView1.ClientSize.Width - DataGridView1.RowHeadersWidth - 4
             Dim otherWidth As Integer = 0
             For Each c As DataGridViewColumn In DataGridView1.Columns
                 If c.Name = narrationColName Then Continue For
                 If Not c.Visible Then Continue For
-                otherWidth += c.Width
+                ' Respect minimum reasonable widths for common columns
+                Dim w = c.Width
+                If c.Name.ToLower().Contains("date") AndAlso w < 90 Then w = 90
+                If c.Name.ToLower().Contains("type") AndAlso w < 80 Then w = 80
+                If c.Name.ToLower().Contains("doc") AndAlso w < 70 Then w = 70
+                If c.Name.ToLower().Contains("debit") OrElse c.Name.ToLower().Contains("credit") OrElse c.Name.ToLower().Contains("balance") Then
+                    If w < 80 Then w = 80
+                End If
+                otherWidth += w
             Next
+
             Dim avail = total - otherWidth
-            If avail < 200 Then avail = 200
+            If avail < 150 Then avail = 150
             DataGridView1.Columns(narrationColName).Width = avail
+        Catch
+        End Try
+    End Sub
+
+    ' Force-fit columns to DataGridView client width so no horizontal scroll appears.
+    Private Sub ForceFitColumnWidths()
+        Try
+            If DataGridView1.Columns.Count = 0 Then Return
+
+            DataGridView1.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+            Dim totalAvail As Integer = DataGridView1.ClientSize.Width - DataGridView1.RowHeadersWidth - 4
+            If totalAvail <= 0 Then Return
+
+            ' Fixed width for view button column if present
+            Dim viewWidth As Integer = 84
+            If DataGridView1.Columns.Contains("colViewImage") Then
+                totalAvail -= viewWidth
+            Else
+                viewWidth = 0
+            End If
+
+            ' Define weights for other columns (smaller numbers = smaller width)
+            Dim weights As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase) From {
+                {"colDate", 10}, {"colType", 8}, {"colDoc", 6}, {"colNarration", 40}, {"colDebit", 8}, {"colCredit", 8}, {"colBalance", 8}, {"colClosing", 6}
+            }
+
+            ' Collect visible columns to size
+            Dim cols As New List(Of DataGridViewColumn)
+            For Each c As DataGridViewColumn In DataGridView1.Columns
+                If Not c.Visible Then Continue For
+                If String.Equals(c.Name, "colViewImage", StringComparison.OrdinalIgnoreCase) Then Continue For
+                cols.Add(c)
+            Next
+
+            ' Compute total weight for present columns
+            Dim totalWeight As Integer = 0
+            For Each c In cols
+                If weights.ContainsKey(c.Name) Then
+                    totalWeight += weights(c.Name)
+                Else
+                    totalWeight += 4 ' default small weight
+                End If
+            Next
+
+            If totalWeight = 0 Then Return
+
+            ' Assign widths based on weights, respect minimums
+            Dim assigned As Integer = 0
+            For i = 0 To cols.Count - 1
+                Dim c = cols(i)
+                Dim w = If(weights.ContainsKey(c.Name), weights(c.Name), 4)
+                Dim colWidth As Integer = CInt(Math.Floor(totalAvail * (w / totalWeight)))
+                ' Minimum sensible widths
+                If c.Name.ToLower().Contains("date") AndAlso colWidth < 90 Then colWidth = 90
+                If c.Name.ToLower().Contains("type") AndAlso colWidth < 80 Then colWidth = 80
+                If c.Name.ToLower().Contains("doc") AndAlso colWidth < 70 Then colWidth = 70
+                If c.Name.ToLower().Contains("debit") OrElse c.Name.ToLower().Contains("credit") OrElse c.Name.ToLower().Contains("balance") Then
+                    If colWidth < 80 Then colWidth = 80
+                End If
+                ' For last column assign remaining pixels to avoid rounding leftover
+                If i = cols.Count - 1 Then
+                    colWidth = Math.Max(colWidth, totalAvail - assigned)
+                End If
+                c.Width = colWidth
+                assigned += colWidth
+            Next
+
+            ' Finally set view column width and ensure last display index
+            If DataGridView1.Columns.Contains("colViewImage") Then
+                Dim vcol = DataGridView1.Columns("colViewImage")
+                vcol.Width = viewWidth
+                vcol.DisplayIndex = DataGridView1.Columns.Count - 1
+            End If
+
         Catch
         End Try
     End Sub
@@ -277,6 +439,8 @@ Public Class frmLedger
         ' Ensure monthly closing column is removed and widths reset for normal ledger
         RemoveClosingColumnFromGrid()
         AdjustColumnWidths(False)
+        ' Recompute final fit so view column is visible and no horizontal scroll
+        ForceFitColumnWidths()
     End Sub
 
     Sub GRIDBACKCOLOR()
@@ -439,6 +603,7 @@ Public Class frmLedger
         EnsureViewImageColumn()
         PopulateViewImageButtons()
         AdjustNarrationWidth()
+        ForceFitColumnWidths()
 
         txtTotalDebit.Text = Form3.Amt(dtTotals.Rows(0)("totDebit"))
         txtTotalCredit.Text = Form3.Amt(dtTotals.Rows(0)("totCredit"))
