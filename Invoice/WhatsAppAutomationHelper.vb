@@ -20,9 +20,9 @@ Module WASender
 
 #Region "SESSION MANAGEMENT"
 
-    Public Sub StartWhatsAppSession()
-        If DateTime.Now < sessionUnavailableUntil Then Exit Sub
-        If driver IsNot Nothing Then Exit Sub
+    Public Function StartWhatsAppSession() As Boolean
+        If DateTime.Now < sessionUnavailableUntil Then Return False
+        If driver IsNot Nothing Then Return True
 
         Try
             Dim options As New ChromeOptions()
@@ -36,18 +36,16 @@ Module WASender
 
             driver = New ChromeDriver(service, options)
             wait = New WebDriverWait(driver, TimeSpan.FromSeconds(60))
-
             driver.Navigate().GoToUrl("https://web.whatsapp.com/")
-
-            ' Wait until WhatsApp loads chats
             wait.Until(Function(d) d.FindElements(By.XPath("//div[@id='pane-side']")).Count > 0)
-
+            Return True
         Catch ex As Exception
             LogError("StartWhatsAppSession", ex)
             sessionUnavailableUntil = DateTime.Now.AddMinutes(SessionBackoffMinutes)
             StopSession()
+            Return False
         End Try
-    End Sub
+    End Function
 
     Public Sub StopSession()
         Try
@@ -63,11 +61,17 @@ Module WASender
     End Sub
 
     Private Sub EnsureSession()
-        Try
-            If driver Is Nothing Then
-                StartWhatsAppSession()
-                Exit Sub
+        If driver Is Nothing Then
+            If Not StartWhatsAppSession() Then
+                ' Do NOT throw here — log and return so callers can skip WhatsApp work until driver is available.
+                Dim msg As String = "EnsureSession - StartWhatsAppSession failed; skipping WhatsApp actions until " &
+                                    sessionUnavailableUntil.ToString("yyyy-MM-dd HH:mm:ss")
+                LogError(msg, New Exception("StartWhatsAppSession returned False"))
+                Return
             End If
+        End If
+
+        Try
             Dim t = driver.Title
         Catch
             StopSession()
@@ -81,6 +85,13 @@ Module WASender
 
     Public Function SendMessage(recipient As String, message As String) As Boolean
         EnsureSession()
+
+        ' If driver or wait not initialized, skip and return False (safe no-op until driver is fixed)
+        If driver Is Nothing OrElse wait Is Nothing Then
+            LogError("SendMessage skipped - WebDriver not initialized", New Exception(recipient))
+            Return False
+        End If
+
         Try
             recipient = CleanNumber(recipient)
             Dim url = $"https://web.whatsapp.com/send?phone={recipient}"
@@ -135,6 +146,12 @@ Module WASender
 
     Public Sub SendMedia(recipient As String, filePath As String, Optional caption As String = "")
         EnsureSession()
+
+        If driver Is Nothing OrElse wait Is Nothing Then
+            LogError("SendMedia skipped - WebDriver not initialized", New Exception(recipient & " | " & filePath))
+            Exit Sub
+        End If
+
         If Not File.Exists(filePath) Then
             LogError("SendMedia", New Exception("File not found: " & filePath))
             Exit Sub
@@ -178,6 +195,10 @@ Module WASender
 #Region "CONFIRM MESSAGE"
 
     Private Function ConfirmMessageSent(message As String, recepient As String) As Boolean
+        If driver Is Nothing Then
+            Return False
+        End If
+
         Dim sent As Boolean = False
         Dim timeout = DateTime.Now.AddSeconds(10)
         While DateTime.Now < timeout

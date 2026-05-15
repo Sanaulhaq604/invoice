@@ -8,10 +8,12 @@ Imports System.Net.WebClient
 Imports System.Web.UI.WebControls
 Imports CrystalDecisions.CrystalReports.Engine
 Imports CrystalDecisions.Shared
+Imports System.Threading
+Imports System.Threading.Tasks
 
 Public Class MainPage
 
-
+    Private isCheckingReceipts As Integer = 0
 
     Public CustomerAging As DataTable
     Public ConInfo As New ConnectionInfo
@@ -48,6 +50,15 @@ Public Class MainPage
     Public LoginDetails As String '= frmLogin.MySqlServer + " - " + frmLogin.UserLevel + " - " + frmLogin.UserName
     Public PreviousBalance As Integer = 0
     Public Property StkVoucher As Integer
+
+    ' Dashboard instance
+    Public Shared Dashboard As New Dashboard()
+
+    ' --- Simple Dashboard members ---
+    Private dgvDifferences As DataGridView = Nothing
+    Private tmrDifferences As Windows.Forms.Timer = Nothing
+    Private lblLastUpdate As Label = Nothing
+
 
     Sub ChangeIdColumn()
         SQLData("exec sp_rename 'LEDGERS.id','oldid_temp','COLUMN'
@@ -149,47 +160,134 @@ Public Class MainPage
     End Sub
 
     Private Sub MainPage_Load(sender As Object, e As EventArgs) Handles MyBase.Load
-        lbCompany()
-        DocNumberCheck()
+        Try
+            If Not String.IsNullOrWhiteSpace(frmLogin.MySqlServer) Then
+                conString = "Server=" & frmLogin.MySqlServer & ";Database=" & MyDataBase & ";User ID=sa;Password=Ai;"
+                conString2 = conString
+            End If
+        Catch
+        End Try
 
-        'AddHandlersForAllControls(Me)
-        With ConInfo
-            .ServerName = frmLogin.MySqlServer
-            .DatabaseName = MyDataBase
-            .UserID = "sa"
-            .Password = Password
-        End With
-        Splash.Show()
-        dtpEstimates.Value = Now.Date.AddDays(-10)
+        ' Friendly form caption: company first, then server and user info
+        Dim companyName As String = Settings("Company")
+        If String.IsNullOrWhiteSpace(companyName) Then companyName = "Accounts"
 
-        'frmLogin.ShowDialog()
-        If frmLogin.UserLevel <> "Admin" Then
-            DailySaleToolStripMenuItem.Visible = False
-            pnlCashnBank.Visible = False
-        Else
-            DailySaleToolStripMenuItem.Visible = True
+        Dim serverLabel As String = If(String.IsNullOrWhiteSpace(frmLogin.MySqlServer), "Server: unknown", "Server: " & frmLogin.MySqlServer)
+        Dim userLabel As String = If(String.IsNullOrWhiteSpace(frmLogin.UserName), "", $"{frmLogin.UserName} ({frmLogin.UserLevel})")
 
-            'CashnBank()
-        End If
-        Dim cpu As String = CpuId().ToLower
-        If cpu <> "bfebfbff000806e9" And cpu <> "bfebfbff000806ea" And cpu <> "bfebfbff000306a9" And cpu <> "bfebfbff00020655" And cpu <> "bfebfbff000506e3" And cpu <> "bfebfbff000306c3" And cpu <> "bfebfbff000406e3" And cpu <> "bfebfbff000806ec" And cpu <> "bfebfbff000206a7" Then
-            MsgBox(CpuId())
-            End
-        Else
-            Splash.Hide()
+        Me.Text = $"{companyName} — {serverLabel} {If(userLabel = "", "", " — " & userLabel)}"
 
-        End If
-        Dim WAServer As String = Settings("WAServer")
-        If Environment.MachineName.ToLower = WAServer.ToLower Then
-            'MsgBox(WAServer + " is the WhatsApp Server !")
-            WASender.StartWhatsAppSession()
-            Timer1.Enabled = True
-        Else
-            Timer1.Enabled = False
+        ' Ensure lblCompany shows readable status and is visible
+        Try
+            lblCompany.Text = If(userLabel = "", serverLabel, $"User: {userLabel}  |  {serverLabel}")
+            lblCompany.Font = New Font("Segoe UI", 14, FontStyle.Regular)
+            lblCompany.BackColor = Color.FromArgb(210, Color.White) ' slightly translucent white
+            lblCompany.ForeColor = Color.Black
+            lblCompany.AutoSize = True
+            lblCompany.Visible = True
+            lblCompany.BringToFront()
+            ' Position bottom-right with a margin
+            Dim margin = 20
+            lblCompany.Left = Math.Max(10, Me.ClientSize.Width - lblCompany.Width - margin)
+            lblCompany.Top = Math.Max(10, Me.ClientSize.Height - lblCompany.Height - margin)
+        Catch
+            ' keep app resilient if lblCompany is missing
+        End Try
 
-        End If
-        Timer2.Enabled = False
-        '   cmbServer.Text = MySqlServer
+        ' Initialize dashboard monitor
+        StartDifferencesMonitor()
+    End Sub
+
+    Private Sub StartDifferencesMonitor()
+        Try
+            ' Run the fetch on a background thread to avoid blocking UI
+            Dim q As String =
+                "select cast(l.date as date) Date,l.type,l.doc,a.Route,a.ID,Subsidary,l.Credit,ltrim(rtrim(EntryBy)) as EntryBy,EntryDateTime
+,case when DATALENGTH(image)>0 then 'Yes' else 'No' End HasImage	
+from ledgers l join coa a on l.acid=a.Id join Images.dbo.name_reciepts im on l.type=im.type and l.doc=im.Doc
+where LedgerStatus='difference' and credit is not null
+order by Route,EntryBy,EntryDateTime
+"
+
+            Dim dt As DataTable = SQLData(q)
+            If dt Is Nothing Then
+                ' marshal dashboard with error
+                If Me.IsHandleCreated Then
+                    Me.BeginInvoke(New Action(Sub()
+                                                  Dashboard.MdiParent = Me
+                                                  Dashboard.FormBorderStyle = FormBorderStyle.None
+                                                  Dashboard.Show()
+                                                  Dashboard.BringToFront()
+                                                  Dashboard.ShowDifferences(Nothing)
+                                              End Sub))
+                End If
+                Return
+            End If
+
+            '         ' Add HasImage column and populate by querying images DB via SQLImageData
+            '         If Not dt.Columns.Contains("HasImage") Then
+            '             dt.Columns.Add("HasImage", GetType(String))
+            '         End If
+
+            '         For Each r As DataRow In dt.Rows
+            '             Try
+            'Dim docId = CInt(r("doc"))
+            'Dim docType = r("Type").value
+            'Dim imgQ = $"SELECT TOP 1 IMAGE FROM images.dbo.name_reciepts WHERE [type] = {docType} AND doc = {docId}"
+            'Dim imgDt As DataTable = SQLImageData(imgQ)
+            '                 r("HasImage") = If(imgDt IsNot Nothing AndAlso imgDt.Rows.Count > 0, "Yes", "No")
+            '             Catch
+            '                 r("HasImage") = "No"
+            '             End Try
+            '         Next
+
+            ' Marshal UI update
+            If Me.IsHandleCreated Then
+                Me.BeginInvoke(New Action(Sub()
+                                              Dashboard.MdiParent = Me
+                                              Dashboard.FormBorderStyle = FormBorderStyle.None
+                                              Dashboard.Show()
+                                              Dashboard.BringToFront()
+                                              Dashboard.ShowDifferences(dt)
+                                          End Sub))
+            End If
+
+            ' background mark-as-checked (keep as before)
+            Task.Run(Sub()
+                         Try
+                             Using con As New SqlConnection(conString)
+                                 con.Open()
+                                 Using cmd As New SqlCommand("UPDATE ledgers SET LedgerStatus=@newStatus WHERE LedgerStatus='difference' AND credit IS NOT NULL AND EXISTS (SELECT 1 FROM Images.dbo.name_reciepts im WHERE im.[type]=ledgers.type AND im.doc=ledgers.doc)", con)
+                                     cmd.Parameters.AddWithValue("@newStatus", "difference_checked")
+                                     cmd.CommandTimeout = 120
+                                     cmd.ExecuteNonQuery()
+                                 End Using
+                             End Using
+                         Catch
+                         End Try
+                     End Sub)
+
+        Catch ex As Exception
+            ' log and show dashboard with error
+            Try
+                Dim logFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")
+                If Not System.IO.Directory.Exists(logFolder) Then System.IO.Directory.CreateDirectory(logFolder)
+                Dim fullPath = System.IO.Path.Combine(logFolder, "background_errors.log")
+                System.IO.File.AppendAllText(fullPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] StartDifferencesMonitor fetch error: {ex.Message}{Environment.NewLine}{ex.StackTrace}{Environment.NewLine}{Environment.NewLine}")
+            Catch
+            End Try
+
+            If Me.IsHandleCreated Then
+                Me.BeginInvoke(New Action(Sub()
+                                              Dashboard.MdiParent = Me
+                                              Dashboard.FormBorderStyle = FormBorderStyle.None
+                                              Dashboard.Show()
+                                              Dashboard.BringToFront()
+                                              Dashboard.ShowDifferences(Nothing)
+                                          End Sub))
+            End If
+        End Try
+
     End Sub
 
     Private Function CpuId() As String
@@ -258,10 +356,14 @@ Public Class MainPage
 
 
 
-    Private Sub MainPage_Enter(sender As Object, e As EventArgs) Handles MyBase.Load
-        Me.Text = "Accounts -" + frmLogin.MySqlServer + " - " + frmLogin.UserLevel + " - " + frmLogin.UserName
-
-
+    Private Sub MainPage_Enter(sender As Object, e As EventArgs) Handles MyBase.Enter
+        ' Keep a short, readable title in Enter as well (does not override Load)
+        Try
+            Dim companyName As String = Settings("Company")
+            If String.IsNullOrWhiteSpace(companyName) Then companyName = "Accounts"
+            Me.Text = companyName & " — Dashboard"
+        Catch
+        End Try
     End Sub
 
     Private Sub ToolStripButton1_Click(sender As Object, e As EventArgs) Handles ToolStripButton1.Click
@@ -570,7 +672,7 @@ Public Class MainPage
             report.SetParameterValue("SPO", txtSPO.Text)
             report.SetParameterValue("CustomerName", txtCustomerName.Text)
             report.SetParameterValue("Route", txtRoute.Text)
-            report.ExportToDisk(ExportFormatType.PortableDocFormat, settings("Temp folder") + "Aging " & CusName & " , " & RT & ", " & SP & ", " & Now.Date.ToString("d") & ".pdf")
+            report.ExportToDisk(ExportFormatType.PortableDocFormat, Settings("Temp folder") + "Aging " & CusName & " , " & RT & ", " & SP & ", " & Now.Date.ToString("d") & ".pdf")
             txtCustomerName.Select()
             txtCustomerName.SelectAll()
             DisappearingMsgBox.Show()
@@ -1021,12 +1123,37 @@ WHERE rn = 1;;")
         End If
     End Sub
 
-    Private Sub Timer1_Tick(sender As Object, e As EventArgs) Handles Timer1.Tick
+    Private Async Sub Timer1_Tick(sender As Object, e As EventArgs) Handles Timer1.Tick
+        ' Prevent overlapping executions (0 -> 1). If it was already 1, exit.
+        If System.Threading.Interlocked.Exchange(isCheckingReceipts, 1) = 1 Then
+            Return
+        End If
+
         Timer1.Enabled = False
-        CheckNewReceipts()
-        'CheckNewinvoice()
-        'SendPendingMsgs()
-        Timer1.Enabled = True
+        Try
+            Await Task.Run(Sub()
+                               Try
+                                   CheckNewReceipts()
+                               Catch ex As Exception
+                                   ' Log background errors (non-blocking)
+                                   Try
+                                       Dim logFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")
+                                       If Not System.IO.Directory.Exists(logFolder) Then System.IO.Directory.CreateDirectory(logFolder)
+                                       Dim fullPath = System.IO.Path.Combine(logFolder, "background_errors.log")
+                                       System.IO.File.AppendAllText(fullPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Background task error: {ex.Message}{Environment.NewLine}{ex.StackTrace}{Environment.NewLine}{Environment.NewLine}")
+                                   Catch
+                                   End Try
+
+                                   ' Update UI status safely (no modal dialogs)
+                                   If Me.IsHandleCreated Then
+                                       Me.BeginInvoke(New Action(Sub() Label1.Text = "Background error: " & ex.Message))
+                                   End If
+                               End Try
+                           End Sub)
+        Finally
+            Timer1.Enabled = True
+            System.Threading.Interlocked.Exchange(isCheckingReceipts, 0)
+        End Try
     End Sub
 
     Private Sub MainPage_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
@@ -1147,21 +1274,21 @@ WHERE rn = 1;;")
             Return
         End If
 
-        Dashboard.Chart1.Series("Sales").Points.Clear()
-
-        ' Ensure categorical labels are not re-ordered by axis; reverse axis to show newest month first
-        If Dashboard.Chart1.ChartAreas.Count > 0 Then
-            Dashboard.Chart1.ChartAreas(0).AxisX.IsReversed = True
-            Dashboard.Chart1.ChartAreas(0).AxisX.Interval = 1
-        End If
-
-        For i As Integer = 0 To 5
-            Dim m = Date.Now.AddMonths(-i).ToString("yyyy-MM")
-            Dim rows() As DataRow = dtSales.Select("Month = '" & m & "'")
-            Dim row As DataRow = If(rows IsNot Nothing AndAlso rows.Length > 0, rows(0), Nothing)
-            Dim value As Decimal = If(row IsNot Nothing, Convert.ToDecimal(row("Total")), 0D)
-            Dashboard.Chart1.Series("Sales").Points.AddXY(m, value)
-        Next
+        'Dashboard.Chart1.Series("Sales").Points.Clear()
+        '
+        '' Ensure categorical labels are not re-ordered by axis; reverse axis to show newest month first
+        'If Dashboard.Chart1.ChartAreas.Count > 0 Then
+        '    Dashboard.Chart1.ChartAreas(0).AxisX.IsReversed = True
+        '    Dashboard.Chart1.ChartAreas(0).AxisX.Interval = 1
+        'End If
+        '
+        'For i As Integer = 0 To 5
+        '    Dim m = Date.Now.AddMonths(-i).ToString("yyyy-MM")
+        '    Dim rows() As DataRow = dtSales.Select("Month = '" & m & "'")
+        '    Dim row As DataRow = If(rows IsNot Nothing AndAlso rows.Length > 0, rows(0), Nothing)
+        '    Dim value As Decimal = If(row IsNot Nothing, Convert.ToDecimal(row("Total")), 0D)
+        '    Dashboard.Chart1.Series("Sales").Points.AddXY(m, value)
+        'Next
 
         Label1.Text = "Last updated: " & Now.ToString("HH:mm:ss")
         Dashboard.MdiParent = Me

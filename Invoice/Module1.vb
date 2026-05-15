@@ -188,25 +188,53 @@ Public Module DGVRowNumbers
         Return dt
     End Function
     Public Function SQLData(Q As String, Optional doc As Integer = 1) As DataTable
-        ' MainPage.conString = "Server=100.122.80.93;Database=AHMADINTERNATIONAL;User ID=sa;Password=Ai;;Connection Timeout=45"
         Dim con As New SqlConnection(MainPage.conString)
-
-        Dim cmd As String
-
+        Dim cmd As String = Q
         Dim dt As New DataTable
-        cmd = Q
         Dim da As New SqlDataAdapter(cmd, con)
-        'Try
-        con.Open()
+
+        Try
+            con.Open()
             da.Fill(dt)
             con.Close()
-        'Catch ex As Exception
-        ' Clipboard.SetText(Q + "      " + ex.Message)
-        'MessageBox.Show(Q + "      " + ex.Message)
-        'Return Nothing
+            Return dt
+        Catch ex As Exception
+            ' Log DB errors to disk and return Nothing so callers can handle failure gracefully
+            Try
+                Dim logFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")
+                If Not System.IO.Directory.Exists(logFolder) Then System.IO.Directory.CreateDirectory(logFolder)
+                Dim fullPath = System.IO.Path.Combine(logFolder, "db_errors.log")
+                System.IO.File.AppendAllText(fullPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] SQLData Error: {ex.Message}{Environment.NewLine}{ex.StackTrace}{Environment.NewLine}{Environment.NewLine}")
+            Catch
+                ' swallow logging errors
+            End Try
+            Return Nothing
+        End Try
+    End Function
 
-        'End Try
-        Return dt
+    Public Function SQLData2(Q As String, Optional doc As Integer = 1) As DataTable
+        Dim con As New SqlConnection(MainPage.conString2)
+        Dim cmd As String = Q
+        Dim dt As New DataTable
+        Dim da As New SqlDataAdapter(cmd, con)
+
+        Try
+            con.Open()
+            da.Fill(dt)
+            con.Close()
+            Return dt
+        Catch ex As Exception
+            ' Log DB errors to disk and return Nothing so callers can handle failure gracefully
+            Try
+                Dim logFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs")
+                If Not System.IO.Directory.Exists(logFolder) Then System.IO.Directory.CreateDirectory(logFolder)
+                Dim fullPath = System.IO.Path.Combine(logFolder, "db_errors.log")
+                System.IO.File.AppendAllText(fullPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] SQLData Error: {ex.Message}{Environment.NewLine}{ex.StackTrace}{Environment.NewLine}{Environment.NewLine}")
+            Catch
+                ' swallow logging errors
+            End Try
+            Return Nothing
+        End Try
     End Function
 
     Public Function SQLImageData(Q As String, Optional doc As Integer = 1) As DataTable

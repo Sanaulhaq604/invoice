@@ -28,8 +28,9 @@ Public Class frmLedger
             btnCol.Width = 84
             btnCol.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
             btnCol.DefaultCellStyle.Padding = New Padding(6, 4, 6, 4)
-            btnCol.DefaultCellStyle.BackColor = Color.FromArgb(240, 240, 240)
-            btnCol.DefaultCellStyle.ForeColor = Color.Black
+            ' Use a neutral default; per-row styling mirrors the Dashboard style (green enabled, gray disabled)
+            btnCol.DefaultCellStyle.BackColor = Color.LightGray
+            btnCol.DefaultCellStyle.ForeColor = Color.Gray
             DataGridView1.Columns.Add(btnCol)
             btnCol.DisplayIndex = DataGridView1.Columns.Count - 1
         Catch
@@ -60,16 +61,18 @@ Public Class frmLedger
                         row.Cells(btnCellIndex).Style.BackColor = Color.White
                         row.Cells(btnCellIndex).Style.ForeColor = Color.Black
                     Else
-                        Dim q As String = "SELECT TOP 1 IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
+                        Dim q As String = "SELECT TOP 1 IMAGE FROM images.dbo.name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
                         Dim dtImg As DataTable = SQLImageData(q)
                         If dtImg.Rows.Count > 0 AndAlso Not IsDBNull(dtImg.Rows(0)(0)) Then
+                            ' Match Dashboard appearance: enabled green button with black text
                             row.Cells(btnCellIndex).Value = "View"
                             row.Cells(btnCellIndex).ReadOnly = False
-                            row.Cells(btnCellIndex).Style.BackColor = Color.FromArgb(0, 122, 204)
-                            row.Cells(btnCellIndex).Style.ForeColor = Color.White
+                            row.Cells(btnCellIndex).Style.BackColor = Color.LightGreen
+                            row.Cells(btnCellIndex).Style.ForeColor = Color.Black
                             row.Cells(btnCellIndex).Style.Font = New Font(DataGridView1.Font, FontStyle.Bold)
                             row.Cells(btnCellIndex).Style.Alignment = DataGridViewContentAlignment.MiddleCenter
                         Else
+                            ' Disabled state: no text, gray background
                             row.Cells(btnCellIndex).Value = ""
                             row.Cells(btnCellIndex).ReadOnly = True
                             row.Cells(btnCellIndex).Style.BackColor = Color.LightGray

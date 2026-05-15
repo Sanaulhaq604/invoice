@@ -264,9 +264,6 @@
     <Compile Include="CustomTextBox.vb">
       <SubType>Component</SubType>
     </Compile>
-    <Compile Include="Dashboard.Designer.vb">
-      <DependentUpon>Dashboard.vb</DependentUpon>
-    </Compile>
     <Compile Include="Dashboard.vb">
       <SubType>Form</SubType>
     </Compile>
@@ -562,9 +559,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="CRV.resx">
       <DependentUpon>CRV.vb</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Dashboard.resx">
-      <DependentUpon>Dashboard.vb</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="DisappearingMsgBox.resx">
       <DependentUpon>DisappearingMsgBox.vb</DependentUpon>
