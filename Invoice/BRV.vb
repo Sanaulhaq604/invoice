@@ -1,5 +1,9 @@
-﻿Public Class BRV
+﻿Imports System.Data.SqlClient
+Public Class BRV
     Dim SessionRecovery As Integer = 0
+    Private _selectedImageBytes() As Byte = Nothing
+    Private _pbThumb As PictureBox = Nothing
+    Private _btnAttach As Button = Nothing
     Dim LastVocuher As Integer = 0
     Private Sub btnExit_Click(sender As Object, e As EventArgs) Handles btnExit.Click
         Me.Close()
@@ -10,9 +14,118 @@
         Me.Text = "Bank Receipt Voucher"
         vno()
         dgvUpdate()
+        EnsureImageAttachControls()
         'dgvCRV.Columns("Amount").DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
         'dgvCRV.Columns("Amount").DefaultCellStyle.Font = New Font("Tahoma", 10, FontStyle.Bold)
         'dgvCRV.Columns("Amount").DefaultCellStyle.Format = "N2"
+    End Sub
+
+    Private Sub EnsureImageAttachControls()
+        Try
+            ' Create attach button next to save button
+            Dim parentCtrl As Control = If(ctbSave.Parent, CType(Me, Control))
+            If _btnAttach Is Nothing Then
+                _btnAttach = New Button()
+                _btnAttach.Text = "Attach Image"
+                _btnAttach.Width = 100
+                _btnAttach.Height = ctbSave.Height
+                ' place the attach button below the save button to avoid overlapping other buttons
+                _btnAttach.Top = ctbSave.Top
+                _btnAttach.Left = ctbSave.Left - ctbSave.Width - 300
+                AddHandler _btnAttach.Click, AddressOf BtnAttach_Click
+                parentCtrl.Controls.Add(_btnAttach)
+                _btnAttach.BringToFront()
+                _btnAttach.Anchor = AnchorStyles.Left Or AnchorStyles.Top
+            End If
+
+            ' Create thumbnail box beside the attach button so it doesn't overlap other controls
+            If _pbThumb Is Nothing Then
+                _pbThumb = New PictureBox()
+                _pbThumb.Width = _btnAttach.Width
+                _pbThumb.Height = _btnAttach.Height
+                _pbThumb.Left = _btnAttach.Left + _btnAttach.Width + 8
+                _pbThumb.Top = _btnAttach.Top
+                _pbThumb.BorderStyle = BorderStyle.FixedSingle
+                _pbThumb.SizeMode = PictureBoxSizeMode.StretchImage
+                _pbThumb.Visible = False
+                parentCtrl.Controls.Add(_pbThumb)
+                _pbThumb.BringToFront()
+                _pbThumb.Anchor = AnchorStyles.Left Or AnchorStyles.Top
+            End If
+
+            ' Initially disable save until image attached
+            ctbSave.Enabled = False
+        Catch
+        End Try
+    End Sub
+
+    Private Sub BtnAttach_Click(sender As Object, e As EventArgs)
+        Try
+            Using ofd As New OpenFileDialog()
+                ofd.Title = "Select Image for BRV"
+                ofd.Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp;*.gif"
+                If ofd.ShowDialog() = DialogResult.OK Then
+                    Dim path = ofd.FileName
+                    Dim imgBytes() As Byte = IO.File.ReadAllBytes(path)
+                    If imgBytes IsNot Nothing AndAlso imgBytes.Length > 0 Then
+                        _selectedImageBytes = imgBytes
+                        Using ms As New IO.MemoryStream(imgBytes)
+                            Dim img = Image.FromStream(ms)
+                            _pbThumb.Image = img
+                            _pbThumb.Visible = True
+                        End Using
+                        ctbSave.Enabled = True
+                    Else
+                        MsgBox("Selected file could not be read as an image.")
+                    End If
+                End If
+            End Using
+        Catch ex As Exception
+            MsgBox("Error selecting image: " & ex.Message)
+        End Try
+    End Sub
+
+    Private Sub LoadAttachedImage(docNumber As String)
+        Try
+            If String.IsNullOrWhiteSpace(docNumber) Then
+                _selectedImageBytes = Nothing
+                If _pbThumb IsNot Nothing Then _pbThumb.Visible = False
+                ctbSave.Enabled = False
+                Return
+            End If
+
+            Dim q As String = "SELECT TOP 1 IMAGE FROM name_reciepts WHERE [type]='BRV' AND doc='" & docNumber.Replace("'", "''") & "'"
+            Dim dtImg As DataTable = SQLImageData(q)
+            If dtImg.Rows.Count > 0 AndAlso Not IsDBNull(dtImg.Rows(0)(0)) Then
+                Dim imgBytes() As Byte = DirectCast(dtImg.Rows(0)(0), Byte())
+                If imgBytes IsNot Nothing AndAlso imgBytes.Length > 0 Then
+                    _selectedImageBytes = imgBytes
+                    If _pbThumb IsNot Nothing Then
+                        Using ms As New IO.MemoryStream(imgBytes)
+                            Dim img = Image.FromStream(ms)
+                            _pbThumb.Image = img
+                            _pbThumb.Visible = True
+                        End Using
+                    End If
+                    ' existing image means save can proceed (editing)
+                    ctbSave.Enabled = True
+                    Return
+                End If
+            End If
+
+            ' no image found
+            _selectedImageBytes = Nothing
+            If _pbThumb IsNot Nothing Then
+                _pbThumb.Image = Nothing
+                _pbThumb.Visible = False
+            End If
+            ctbSave.Enabled = False
+        Catch ex As Exception
+            ' ignore; keep UI consistent
+            _selectedImageBytes = Nothing
+            If _pbThumb IsNot Nothing Then _pbThumb.Visible = False
+            ctbSave.Enabled = False
+        End Try
     End Sub
 
     Sub dgvUpdate()
@@ -59,6 +172,9 @@ ORDER BY l.doc;
 
     Private Sub dtp1_Leave(sender As Object, e As EventArgs) Handles dtp1.Leave, dtp1.ValueChanged
         dgvUpdate()
+
+        ' Load any previously attached image for this BRV
+        LoadAttachedImage(txtCRVNo.Text)
     End Sub
 
     Sub save()
@@ -74,8 +190,11 @@ ORDER BY l.doc;
             ConditionalInsertValue = ""
             Narr = "Pending - Entry by " & frmLogin.UserName & " ," & txtNarration.Text
         End If
-
-
+        ' If no image bytes selected, prompt to attach image then abort save so user can confirm
+        If _selectedImageBytes Is Nothing OrElse _selectedImageBytes.Length = 0 Then
+            If _btnAttach IsNot Nothing Then _btnAttach.PerformClick()
+            Return
+        End If
 
         Dim dt As DataTable = SQLData("select doc from docnumber where type='BRV'")
         If txtCRVNo.Text = LastVocuher Then
@@ -112,6 +231,69 @@ ORDER BY l.doc;
                                                     ")
 
         SQLData(UpdateLedgers)
+        ' Ensure an image was attached before finalizing save
+        If _selectedImageBytes Is Nothing OrElse _selectedImageBytes.Length = 0 Then
+            MsgBox("Please attach an image before saving the BRV.")
+            Return
+        End If
+
+        ' Save image to images database (name_reciepts) with type='BRV' and doc = txtCRVNo.Text
+        Try
+            Using con As New SqlConnection(MainPage.conString2)
+                con.Open()
+                Using cmdExist As New SqlCommand("SELECT COUNT(1) FROM name_reciepts WHERE [type]=@type AND doc=@doc", con)
+                    cmdExist.Parameters.AddWithValue("@type", "BRV")
+                    cmdExist.Parameters.AddWithValue("@doc", txtCRVNo.Text)
+                    Dim exists As Integer = CInt(cmdExist.ExecuteScalar())
+
+                    If exists > 0 Then
+                        Using cmdUpd As New SqlCommand("UPDATE name_reciepts SET image = @img WHERE [type]=@type AND doc=@doc", con)
+                            cmdUpd.Parameters.AddWithValue("@img", _selectedImageBytes)
+                            cmdUpd.Parameters.AddWithValue("@type", "BRV")
+                            cmdUpd.Parameters.AddWithValue("@doc", txtCRVNo.Text)
+                            cmdUpd.ExecuteNonQuery()
+                        End Using
+                    Else
+                        Using cmdIns As New SqlCommand("INSERT INTO name_reciepts (doc,[type],image) VALUES (@doc,@type,@img)", con)
+                            cmdIns.Parameters.AddWithValue("@doc", txtCRVNo.Text)
+                            cmdIns.Parameters.AddWithValue("@type", "BRV")
+                            cmdIns.Parameters.AddWithValue("@img", _selectedImageBytes)
+                            cmdIns.ExecuteNonQuery()
+                        End Using
+                    End If
+
+                    ' Optionally update audit columns if they exist (username instead of EntryBy)
+                    Using cmdAudit As New SqlCommand(
+                        "IF COL_LENGTH('dbo.name_reciepts','username') IS NOT NULL BEGIN UPDATE name_reciepts SET username=@user WHERE [type]=@type AND doc=@doc END; " &
+                        "IF COL_LENGTH('dbo.name_reciepts','DateTime') IS NOT NULL BEGIN UPDATE name_reciepts SET DateTime=GETDATE() WHERE [type]=@type AND doc=@doc END; " &
+                        "IF COL_LENGTH('dbo.name_reciepts','acid') IS NOT NULL BEGIN UPDATE name_reciepts SET acid=@acid WHERE [type]=@type AND doc=@doc END;", con)
+                        cmdAudit.Parameters.AddWithValue("@user", frmLogin.UserName)
+                        cmdAudit.Parameters.AddWithValue("@type", "BRV")
+                        cmdAudit.Parameters.AddWithValue("@doc", txtCRVNo.Text)
+                        Dim acidVal As Integer = 0
+                        Integer.TryParse(txtReceivedFromID.Text, acidVal)
+                        cmdAudit.Parameters.AddWithValue("@acid", acidVal)
+                        cmdAudit.ExecuteNonQuery()
+                    End Using
+                End Using
+            End Using
+        Catch ex As Exception
+            MsgBox("Failed to save attached image: " & ex.Message)
+        End Try
+        ' Clear image from memory and thumbnail after entry saved
+        Try
+            _selectedImageBytes = Nothing
+            If _pbThumb IsNot Nothing Then
+                If _pbThumb.Image IsNot Nothing Then
+                    _pbThumb.Image.Dispose()
+                End If
+                _pbThumb.Image = Nothing
+                _pbThumb.Visible = False
+            End If
+            If ctbSave IsNot Nothing Then ctbSave.Enabled = False
+        Catch
+            ' ignore any dispose errors
+        End Try
         If chkSMS.Checked = True Then
             SMS(txtOCell.Text, txtRecdFromMobile.Text, txtCRVNo.Text, txtAmount.Text, dtp1.Value, txtSMServer.Text)
         End If
@@ -154,7 +336,24 @@ ORDER BY l.doc;
 
     Private Sub txtAmount_KeyDown(sender As Object, e As KeyEventArgs) Handles txtAmount.KeyDown, txtSessionTotal.KeyDown
         If e.KeyCode = Keys.Enter Then
-            save()
+            ' Only enforce image selection for the BRV amount textbox (not session total)
+            If sender Is txtAmount Then
+                If _selectedImageBytes Is Nothing OrElse _selectedImageBytes.Length = 0 Then
+                    ' Open file selection dialog via the attach button. Do not save yet.
+                    If _btnAttach IsNot Nothing Then _btnAttach.PerformClick()
+                    ' If user did not select an image, return focus to amount textbox
+                    If _selectedImageBytes Is Nothing OrElse _selectedImageBytes.Length = 0 Then
+                        txtAmount.Select()
+                        e.SuppressKeyPress = True
+                        Return
+                    End If
+                End If
+                ' If image is already selected (or selected just now), proceed to save
+                save()
+            Else
+                ' For other controls (like txtSessionTotal) just save
+                save()
+            End If
             e.SuppressKeyPress = True
         End If
     End Sub
@@ -248,6 +447,8 @@ ORDER BY l.doc;
         txtAmount.Text = row.Cells("colAmount").Value.ToString()
         txtAmount.SelectAll()
         txtAmount.Select()
+        ' Load image for editing
+        LoadAttachedImage(txtCRVNo.Text)
     End Sub
 
     Private Sub dgvCRV_CellDoubleClick(sender As Object, e As DataGridViewCellEventArgs) Handles dgvCRV.CellDoubleClick
