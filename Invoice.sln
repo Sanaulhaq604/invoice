@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.36105.23
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "Invoice", "Invoice\Invoice.vbproj", "{0BCAAC54-F26D-478C-95F1-7BDA43694D53}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{39C1F9A5-927C-4636-8392-7B7F29BD9F74}"
+	ProjectSection(SolutionItems) = preProject
+		MouseClicker.vb = MouseClicker.vb
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0BCAAC54-F26D-478C-95F1-7BDA43694D53}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{0BCAAC54-F26D-478C-95F1-7BDA43694D53}.Debug|Any CPU.Build.0 = Debug|x64
+		{0BCAAC54-F26D-478C-95F1-7BDA43694D53}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0BCAAC54-F26D-478C-95F1-7BDA43694D53}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {678C37F5-A823-49B7-9EF4-EBB9539A64C6}
+	EndGlobalSection
+EndGlobal

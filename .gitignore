@@ -1,0 +1,41 @@
+# Visual Studio
+.vs/
+
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+*.dll
+*.exe
+*.pdb
+*.cache
+
+# NuGet
+packages/
+*.nupkg
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.temp
+
+# Windows system files
+Thumbs.db
+Desktop.ini
+
+# Crystal Reports temp files (if you use it)
+*.rpt~ 
+*.rpt.cache
+UpgradeLog*.htm
+
+# Publish folder
+publish/
