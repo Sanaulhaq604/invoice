@@ -103,7 +103,7 @@ Public Class frmLedger
             If dNumber = "" AndAlso DataGridView1.Columns.Contains("Doc") Then dNumber = Convert.ToString(DataGridView1.Rows(e.RowIndex).Cells("Doc").Value)
             If dType = "" Or dNumber = "" Then Return
 
-            Dim q As String = "SELECT IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
+            Dim q As String = "SELECT IMAGE FROM images.dbo.name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
             Dim dtImg As DataTable = SQLImageData(q)
             If dtImg.Rows.Count = 0 Then
                 MsgBox("No image found for type='" & dType & "' doc='" & dNumber & "'. (SQL: " & q & ")")
@@ -183,7 +183,7 @@ Public Class frmLedger
             If dNumber = "" AndAlso DataGridView1.Columns.Contains("Doc") Then dNumber = Convert.ToString(row.Cells("Doc").Value)
             If dType = "" Or dNumber = "" Then Return
 
-            Dim q As String = "SELECT IMAGE FROM name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
+            Dim q As String = "SELECT IMAGE FROM images.dbo.name_reciepts WHERE [type]='" & dType.Replace("'", "''") & "' AND doc='" & dNumber.Replace("'", "''") & "'"
             Dim dtImg As DataTable = SQLImageData(q)
             If dtImg.Rows.Count = 0 Then
                 MsgBox("No image found for type='" & dType & "' doc='" & dNumber & "'. (SQL: " & q & ")")
