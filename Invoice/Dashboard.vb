@@ -24,70 +24,76 @@ Partial Public Class Dashboard
         If pnlFilters Is Nothing Then
             pnlFilters = New Panel()
             pnlFilters.Dock = DockStyle.Top
-            pnlFilters.Height = 70
+            pnlFilters.Height = 40
             pnlFilters.BackColor = Color.FromArgb(245, 245, 245)
             pnlFilters.BorderStyle = BorderStyle.FixedSingle
             Me.Controls.Add(pnlFilters)
             pnlFilters.BringToFront()
 
-            ' Create labels and textboxes
-            Dim startY As Integer = 10
+            ' Create labels and textboxes in ONE LINE
+            Dim startY As Integer = 8
             Dim startX As Integer = 15
-            Dim labelWidth As Integer = 80
-            Dim textboxWidth As Integer = 180
-            Dim spacing As Integer = 210
+            Dim labelWidth As Integer = 70
+            Dim textboxWidth As Integer = 150
+            Dim xOffset As Integer = startX
             Dim font As New Font("Segoe UI", 9, FontStyle.Regular)
 
             ' Route Filter
             Dim lblRoute As New Label()
             lblRoute.Text = "Route:"
             lblRoute.Font = font
-            lblRoute.Location = New Point(startX, startY)
+            lblRoute.Location = New Point(xOffset, startY)
             lblRoute.Size = New Size(labelWidth, 20)
             pnlFilters.Controls.Add(lblRoute)
+            xOffset += labelWidth + 5
 
             txtRoute = New TextBox()
-            txtRoute.Location = New Point(startX + labelWidth + 5, startY)
+            txtRoute.Location = New Point(xOffset, startY)
             txtRoute.Size = New Size(textboxWidth, 20)
             txtRoute.Font = font
             AddHandler txtRoute.TextChanged, AddressOf FilterTextBox_TextChanged
             pnlFilters.Controls.Add(txtRoute)
+            xOffset += textboxWidth + 20
 
             ' EntryBy Filter
             Dim lblEntryBy As New Label()
             lblEntryBy.Text = "Entry By:"
             lblEntryBy.Font = font
-            lblEntryBy.Location = New Point(startX + spacing, startY)
+            lblEntryBy.Location = New Point(xOffset, startY)
             lblEntryBy.Size = New Size(labelWidth, 20)
             pnlFilters.Controls.Add(lblEntryBy)
+            xOffset += labelWidth + 5
 
             txtEntryBy = New TextBox()
-            txtEntryBy.Location = New Point(startX + spacing + labelWidth + 5, startY)
+            txtEntryBy.Location = New Point(xOffset, startY)
             txtEntryBy.Size = New Size(textboxWidth, 20)
             txtEntryBy.Font = font
             AddHandler txtEntryBy.TextChanged, AddressOf FilterTextBox_TextChanged
             pnlFilters.Controls.Add(txtEntryBy)
+            xOffset += textboxWidth + 20
 
             ' Subsidiary Filter
             Dim lblSubsidiary As New Label()
             lblSubsidiary.Text = "Subsidiary:"
             lblSubsidiary.Font = font
-            lblSubsidiary.Location = New Point(startX, startY + 35)
+            lblSubsidiary.Location = New Point(xOffset, startY)
             lblSubsidiary.Size = New Size(labelWidth, 20)
             pnlFilters.Controls.Add(lblSubsidiary)
+            xOffset += labelWidth + 5
 
             txtSubsidiary = New TextBox()
-            txtSubsidiary.Location = New Point(startX + labelWidth + 5, startY + 35)
+            txtSubsidiary.Location = New Point(xOffset, startY)
             txtSubsidiary.Size = New Size(textboxWidth, 20)
             txtSubsidiary.Font = font
             AddHandler txtSubsidiary.TextChanged, AddressOf FilterTextBox_TextChanged
             pnlFilters.Controls.Add(txtSubsidiary)
+            xOffset += textboxWidth + 20
 
             ' Clear Filters Button
             Dim btnClearFilters As New Button()
             btnClearFilters.Text = "Clear Filters"
-            btnClearFilters.Location = New Point(startX + spacing, startY + 35)
-            btnClearFilters.Size = New Size(100, 25)
+            btnClearFilters.Location = New Point(xOffset, startY - 2)
+            btnClearFilters.Size = New Size(100, 24)
             btnClearFilters.Font = font
             AddHandler btnClearFilters.Click, AddressOf ClearFilters_Click
             pnlFilters.Controls.Add(btnClearFilters)
@@ -207,6 +213,21 @@ Partial Public Class Dashboard
         End If
     End Sub
 
+    ' ── Form Load Event - Maximize and fill available space ─────────────────────
+
+    Private Sub Dashboard_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        Try
+            ' Maximize the form to fill available MDI area
+            Me.WindowState = FormWindowState.Maximized
+            Me.Width = Me.Parent.ClientSize.Width
+            Me.Height = Me.Parent.ClientSize.Height
+        Catch
+            ' If issues occur, set a reasonable default size
+            Me.Width = Math.Min(1400, Screen.PrimaryScreen.WorkingArea.Width - 50)
+            Me.Height = Math.Min(700, Screen.PrimaryScreen.WorkingArea.Height - 100)
+        End Try
+    End Sub
+
     ' ── Main display method ───────────────────────────────────────────────────
 
     Public Sub ShowDifferences(dt As DataTable)
@@ -239,7 +260,7 @@ Partial Public Class Dashboard
             Return
         End If
 
-        lblInfo.Text = ""
+        lblInfo.Text = "Loading data..."
 
         If dgvDifferences Is Nothing Then
             dgvDifferences = New DataGridView()
@@ -247,119 +268,189 @@ Partial Public Class Dashboard
             dgvDifferences.ReadOnly = False
             dgvDifferences.AllowUserToAddRows = False
             dgvDifferences.AllowUserToDeleteRows = False
-            dgvDifferences.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells
+            dgvDifferences.AutoSizeColumnsMode = DataGridViewAutoSizeColumnMode.None
             dgvDifferences.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize
             dgvDifferences.RowHeadersVisible = False
             dgvDifferences.Font = New Font("Segoe UI", 12, FontStyle.Regular)
+            dgvDifferences.ScrollBars = ScrollBars.Both
             Me.Controls.Add(dgvDifferences)
             dgvDifferences.BringToFront()
             AddHandler dgvDifferences.CellClick, AddressOf dgvDifferences_CellClick
             AddHandler dgvDifferences.CellFormatting, AddressOf dgvDifferences_CellFormatting
         End If
 
-        dgvDifferences.DataSource = dt
+        ' Populate data asynchronously to keep UI responsive
+        Task.Run(Sub() PopulateGridAsync(dt))
+    End Sub
 
-        ' ── Hide HasImage column ──────────────────────────────────────────────
-        If dgvDifferences.Columns.Contains("HasImage") Then
-            dgvDifferences.Columns("HasImage").Visible = False
-        End If
+    ' ── Async method to populate grid without blocking UI ──────────────────────
 
-        ' ── Credit column: right-aligned, N0 format ───────────────────────────
-        If dgvDifferences.Columns.Contains("Credit") Then
-            Dim creditCol = dgvDifferences.Columns("Credit")
-            creditCol.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
-            creditCol.DefaultCellStyle.Format = "N0"
-            creditCol.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight
-        End If
-
-        ' ── S.No column – add once, always at index 0 ────────────────────────
-        If Not dgvDifferences.Columns.Contains("SNo") Then
-            Dim snoCol As New DataGridViewTextBoxColumn()
-            snoCol.Name = "SNo"
-            snoCol.HeaderText = "S.No"
-            snoCol.ReadOnly = True
-            snoCol.Width = 55
-            dgvDifferences.Columns.Add(snoCol)
-            dgvDifferences.Columns("SNo").DisplayIndex = 0
-        End If
-
-        ' Populate S.No – bold, centered
-        For rowIdx As Integer = 0 To dgvDifferences.Rows.Count - 1
-            Dim cell = dgvDifferences.Rows(rowIdx).Cells("SNo")
-            cell.Value = rowIdx + 1
-            cell.Style.Font = New Font("Segoe UI", 12, FontStyle.Bold)
-            cell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter
-        Next
-
-        ' ── View button column – add once ─────────────────────────────────────
-        If Not dgvDifferences.Columns.Contains("ViewImage") Then
-            Dim btnColumn As New DataGridViewButtonColumn()
-            btnColumn.Name = "ViewImage"
-            btnColumn.HeaderText = "View"
-            btnColumn.Text = "View"
-            btnColumn.UseColumnTextForButtonValue = False
-            dgvDifferences.Columns.Add(btnColumn)
-        End If
-
-        ' ── Resolve button column – add once ──────────────────────────────────
-        If Not dgvDifferences.Columns.Contains("Resolve") Then
-            Dim resolveColumn As New DataGridViewButtonColumn()
-            resolveColumn.Name = "Resolve"
-            resolveColumn.HeaderText = "Resolve"
-            resolveColumn.Text = "Resolve"
-            resolveColumn.UseColumnTextForButtonValue = True
-            dgvDifferences.Columns.Add(resolveColumn)
-        End If
-
-        ' Set button colour based on HasImage and add Resolve button style
-        If dgvDifferences.Columns.Contains("HasImage") Then
-            For rowIdx As Integer = 0 To dgvDifferences.Rows.Count - 1
-                Dim hasImageValue = dgvDifferences.Rows(rowIdx).Cells("HasImage").Value
-                Dim buttonCell = dgvDifferences.Rows(rowIdx).Cells("ViewImage")
-                Dim resolveCell = dgvDifferences.Rows(rowIdx).Cells("Resolve")
-
-                If hasImageValue IsNot Nothing AndAlso hasImageValue.ToString().ToUpper() = "YES" Then
-                    buttonCell.Value = "View"
-                    buttonCell.Style.ForeColor = Color.Black
-                    buttonCell.Style.BackColor = Color.LightGreen
-                Else
-                    buttonCell.Value = ""
-                    buttonCell.Style.ForeColor = Color.Gray
-                    buttonCell.Style.BackColor = Color.LightGray
-                End If
-
-                ' Style Resolve button
-                resolveCell.Value = "Resolve"
-                resolveCell.Style.ForeColor = Color.White
-                resolveCell.Style.BackColor = Color.DodgerBlue
-            Next
-        End If
-
-        ' ── Resize form to content ────────────────────────────────────────────
-        If dgvDifferences.Columns.Count > 0 Then
-
-            ' Step 1: auto-size all columns first
-            For Each col As DataGridViewColumn In dgvDifferences.Columns
-                col.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells
-            Next
-
-            ' Step 2: override EntryBy AFTER auto-size so it sticks
-            If dgvDifferences.Columns.Contains("EntryBy") Then
-                dgvDifferences.Columns("EntryBy").AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                dgvDifferences.Columns("EntryBy").Width = 150
+    Private Sub PopulateGridAsync(dt As DataTable)
+        Try
+            If Me.InvokeRequired Then
+                Me.Invoke(New Action(Sub() PopulateGridAsync(dt)))
+                Return
             End If
 
-            ' Step 3: recalculate total width AFTER all overrides
-            Dim totalWidth As Integer = 0
-            For Each col As DataGridViewColumn In dgvDifferences.Columns
-                totalWidth += col.Width
-            Next
-            If dgvDifferences.Rows.Count > 10 Then totalWidth += 20
+            dgvDifferences.DataSource = dt
 
-            Me.ClientSize = New Size(
-                Math.Min(Math.Max(totalWidth + 30, 800), Screen.PrimaryScreen.WorkingArea.Width - 100),
-                Math.Min(dgvDifferences.Rows.Count * 30 + 100, Screen.PrimaryScreen.WorkingArea.Height - 100))
-        End If
+            ' ── Hide HasImage column ──────────────────────────────────────────────
+            If dgvDifferences.Columns.Contains("HasImage") Then
+                dgvDifferences.Columns("HasImage").Visible = False
+            End If
+
+            ' Disable horizontal scroll bar
+            dgvDifferences.ScrollBars = ScrollBars.Vertical
+
+            ' ── Credit column: right-aligned, N0 format ───────────────────────────
+            If dgvDifferences.Columns.Contains("Credit") Then
+                Dim creditCol = dgvDifferences.Columns("Credit")
+                creditCol.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                creditCol.DefaultCellStyle.Format = "N0"
+                creditCol.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight
+            End If
+
+            ' ── S.No column – add once, always at index 0 ────────────────────────
+            If Not dgvDifferences.Columns.Contains("SNo") Then
+                Dim snoCol As New DataGridViewTextBoxColumn()
+                snoCol.Name = "SNo"
+                snoCol.HeaderText = "S.No"
+                snoCol.ReadOnly = True
+                dgvDifferences.Columns.Add(snoCol)
+                dgvDifferences.Columns("SNo").DisplayIndex = 0
+            End If
+
+            ' ── View button column – add once ─────────────────────────────────────
+            If Not dgvDifferences.Columns.Contains("ViewImage") Then
+                Dim btnColumn As New DataGridViewButtonColumn()
+                btnColumn.Name = "ViewImage"
+                btnColumn.HeaderText = "View"
+                btnColumn.Text = "View"
+                btnColumn.UseColumnTextForButtonValue = False
+                dgvDifferences.Columns.Add(btnColumn)
+            End If
+
+            ' ── Resolve button column – add once ──────────────────────────────────
+            If Not dgvDifferences.Columns.Contains("Resolve") Then
+                Dim resolveColumn As New DataGridViewButtonColumn()
+                resolveColumn.Name = "Resolve"
+                resolveColumn.HeaderText = "Resolve"
+                resolveColumn.Text = "Resolve"
+                resolveColumn.UseColumnTextForButtonValue = True
+                dgvDifferences.Columns.Add(resolveColumn)
+            End If
+
+            ' NOW apply all column widths (after all columns are added)
+            ' ── Set responsive column widths to fit all columns without horizontal scroll ──────────────
+            ' Calculate available width for columns
+            Dim availableWidth As Integer = dgvDifferences.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 5
+
+            ' Define optimal widths for each column
+            Dim columnWidths As New Dictionary(Of String, Integer) From {
+                {"SNo", 45},
+                {"Date", 90},
+                {"Type", 15},
+                {"Doc", 15},
+                {"Route", 200},
+                {"ID", 60},
+                {"Subsidary", 300},
+                {"Credit", 80},
+                {"EntryBy", 100},
+                {"EntryDateTime", 150},
+                {"ViewImage", 55},
+                {"Resolve", 80}
+            }
+
+            ' Define minimum widths for specific columns
+            Dim minColumnWidths As New Dictionary(Of String, Integer) From {
+                {"Type", 15},
+                {"Doc", 15}
+            }
+
+            ' Calculate total required width
+            Dim totalRequiredWidth As Integer = 0
+            For Each kvp In columnWidths
+                If dgvDifferences.Columns.Contains(kvp.Key) Then
+                    Dim col = dgvDifferences.Columns(kvp.Key)
+                    If col.Visible Then
+                        totalRequiredWidth += kvp.Value
+                    End If
+                End If
+            Next
+
+            ' Apply column widths - if content fits, use it; otherwise scale down proportionally
+            If totalRequiredWidth > availableWidth Then
+                ' Scale down all columns proportionally to fit available width
+                Dim scaleFactor As Double = CDbl(availableWidth) / CDbl(totalRequiredWidth)
+                For Each kvp In columnWidths
+                    If dgvDifferences.Columns.Contains(kvp.Key) Then
+                        Dim col = dgvDifferences.Columns(kvp.Key)
+                        If col.Visible Then
+                            ' Use specific minimum for Type/Doc, otherwise use 40px minimum
+                            Dim minWidth As Integer = If(minColumnWidths.ContainsKey(kvp.Key), minColumnWidths(kvp.Key), 40)
+                            col.Width = Math.Max(CInt(kvp.Value * scaleFactor), minWidth)
+                        End If
+                    End If
+                Next
+            Else
+                ' Use defined widths
+                For Each kvp In columnWidths
+                    If dgvDifferences.Columns.Contains(kvp.Key) Then
+                        Dim col = dgvDifferences.Columns(kvp.Key)
+                        If col.Visible Then
+                            col.Width = kvp.Value
+                        End If
+                    End If
+                Next
+            End If
+
+            ' Handle any remaining unmapped columns
+            For Each col As DataGridViewColumn In dgvDifferences.Columns
+                If col.Visible AndAlso Not columnWidths.ContainsKey(col.Name) Then
+                    col.Width = Math.Max(availableWidth / dgvDifferences.Columns.Count, 60)
+                End If
+            Next
+
+            ' Populate S.No – bold, centered (AFTER width is set)
+            For rowIdx As Integer = 0 To dgvDifferences.Rows.Count - 1
+                Dim cell = dgvDifferences.Rows(rowIdx).Cells("SNo")
+                cell.Value = rowIdx + 1
+                cell.Style.Font = New Font("Segoe UI", 12, FontStyle.Bold)
+                cell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter
+            Next
+
+            ' Set button colour based on HasImage and add Resolve button style
+            If dgvDifferences.Columns.Contains("HasImage") Then
+                For rowIdx As Integer = 0 To dgvDifferences.Rows.Count - 1
+                    Dim hasImageValue = dgvDifferences.Rows(rowIdx).Cells("HasImage").Value
+                    Dim buttonCell = dgvDifferences.Rows(rowIdx).Cells("ViewImage")
+                    Dim resolveCell = dgvDifferences.Rows(rowIdx).Cells("Resolve")
+
+                    If hasImageValue IsNot Nothing AndAlso hasImageValue.ToString().ToUpper() = "YES" Then
+                        buttonCell.Value = "View"
+                        buttonCell.Style.ForeColor = Color.Black
+                        buttonCell.Style.BackColor = Color.LightGreen
+                    Else
+                        buttonCell.Value = ""
+                        buttonCell.Style.ForeColor = Color.Gray
+                        buttonCell.Style.BackColor = Color.LightGray
+                    End If
+
+                    ' Style Resolve button
+                    resolveCell.Value = "Resolve"
+                    resolveCell.Style.ForeColor = Color.White
+                    resolveCell.Style.BackColor = Color.DodgerBlue
+                Next
+            End If
+
+            ' Update info label
+            lblInfo.Text = ""
+
+        Catch ex As Exception
+            If lblInfo IsNot Nothing Then
+                lblInfo.Text = $"Error loading data: {ex.Message}"
+            End If
+        End Try
     End Sub
 
     ' ── CellFormatting: Credit N0 with null safety ────────────────────────────
