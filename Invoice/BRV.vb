@@ -94,7 +94,7 @@ Public Class BRV
                 Return
             End If
 
-            Dim q As String = "SELECT TOP 1 IMAGE FROM name_reciepts WHERE [type]='BRV' AND doc='" & docNumber.Replace("'", "''") & "'"
+            Dim q As String = "SELECT TOP 1 IMAGE FROM images.dbo.name_reciepts WHERE [type]='BRV' AND doc='" & docNumber.Replace("'", "''") & "'"
             Dim dtImg As DataTable = SQLImageData(q)
             If dtImg.Rows.Count > 0 AndAlso Not IsDBNull(dtImg.Rows(0)(0)) Then
                 Dim imgBytes() As Byte = DirectCast(dtImg.Rows(0)(0), Byte())
@@ -241,20 +241,20 @@ ORDER BY l.doc;
         Try
             Using con As New SqlConnection(MainPage.conString2)
                 con.Open()
-                Using cmdExist As New SqlCommand("SELECT COUNT(1) FROM name_reciepts WHERE [type]=@type AND doc=@doc", con)
+                Using cmdExist As New SqlCommand("SELECT COUNT(1) FROM images.dbo.name_reciepts WHERE [type]=@type AND doc=@doc", con)
                     cmdExist.Parameters.AddWithValue("@type", "BRV")
                     cmdExist.Parameters.AddWithValue("@doc", txtCRVNo.Text)
                     Dim exists As Integer = CInt(cmdExist.ExecuteScalar())
 
                     If exists > 0 Then
-                        Using cmdUpd As New SqlCommand("UPDATE name_reciepts SET image = @img WHERE [type]=@type AND doc=@doc", con)
+                        Using cmdUpd As New SqlCommand("UPDATE images.dbo.name_reciepts SET image = @img WHERE [type]=@type AND doc=@doc", con)
                             cmdUpd.Parameters.AddWithValue("@img", _selectedImageBytes)
                             cmdUpd.Parameters.AddWithValue("@type", "BRV")
                             cmdUpd.Parameters.AddWithValue("@doc", txtCRVNo.Text)
                             cmdUpd.ExecuteNonQuery()
                         End Using
                     Else
-                        Using cmdIns As New SqlCommand("INSERT INTO name_reciepts (doc,[type],image) VALUES (@doc,@type,@img)", con)
+                        Using cmdIns As New SqlCommand("INSERT INTO images.dbo.name_reciepts (doc,[type],image) VALUES (@doc,@type,@img)", con)
                             cmdIns.Parameters.AddWithValue("@doc", txtCRVNo.Text)
                             cmdIns.Parameters.AddWithValue("@type", "BRV")
                             cmdIns.Parameters.AddWithValue("@img", _selectedImageBytes)
@@ -264,9 +264,9 @@ ORDER BY l.doc;
 
                     ' Optionally update audit columns if they exist (username instead of EntryBy)
                     Using cmdAudit As New SqlCommand(
-                        "IF COL_LENGTH('dbo.name_reciepts','username') IS NOT NULL BEGIN UPDATE name_reciepts SET username=@user WHERE [type]=@type AND doc=@doc END; " &
-                        "IF COL_LENGTH('dbo.name_reciepts','DateTime') IS NOT NULL BEGIN UPDATE name_reciepts SET DateTime=GETDATE() WHERE [type]=@type AND doc=@doc END; " &
-                        "IF COL_LENGTH('dbo.name_reciepts','acid') IS NOT NULL BEGIN UPDATE name_reciepts SET acid=@acid WHERE [type]=@type AND doc=@doc END;", con)
+                        "IF COL_LENGTH('images.dbo.name_reciepts','username') IS NOT NULL BEGIN UPDATE images.dbo.name_reciepts SET username=@user WHERE [type]=@type AND doc=@doc END; " &
+                        "IF COL_LENGTH('images.dbo.name_reciepts','DateTime') IS NOT NULL BEGIN UPDATE images.dbo.name_reciepts SET DateTime=GETDATE() WHERE [type]=@type AND doc=@doc END; " &
+                        "IF COL_LENGTH('images.dbo.name_reciepts','acid') IS NOT NULL BEGIN UPDATE images.dbo.name_reciepts SET acid=@acid WHERE [type]=@type AND doc=@doc END;", con)
                         cmdAudit.Parameters.AddWithValue("@user", frmLogin.UserName)
                         cmdAudit.Parameters.AddWithValue("@type", "BRV")
                         cmdAudit.Parameters.AddWithValue("@doc", txtCRVNo.Text)

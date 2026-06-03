@@ -5,11 +5,12 @@ Imports System.Data.SqlClient
 Imports System.IO
 Imports System.Net
 Imports System.Net.WebClient
+Imports System.Threading
+Imports System.Threading.Tasks
 Imports System.Web.UI.WebControls
 Imports CrystalDecisions.CrystalReports.Engine
 Imports CrystalDecisions.Shared
-Imports System.Threading
-Imports System.Threading.Tasks
+Imports Microsoft
 
 Public Class MainPage
 
@@ -17,6 +18,9 @@ Public Class MainPage
 
     Public CustomerAging As DataTable
     Public ConInfo As New ConnectionInfo
+
+
+
     Public ThermalPrinter As String = ""
     Public PSERVER As String = ""
     Public OSERVER As String = ""
@@ -167,7 +171,11 @@ Public Class MainPage
             End If
         Catch
         End Try
-
+        ConInfo.ServerName = frmLogin.MySqlServer
+        ConInfo.DatabaseName = MyDataBase
+        ConInfo.UserID = "sa"
+        ConInfo.Password = "Ai"
+        ConInfo.IntegratedSecurity = False
         ' Friendly form caption: company first, then server and user info
         Dim companyName As String = Settings("Company")
         If String.IsNullOrWhiteSpace(companyName) Then companyName = "Accounts"
