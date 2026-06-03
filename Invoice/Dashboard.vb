@@ -24,11 +24,11 @@ Partial Public Class Dashboard
         If pnlFilters Is Nothing Then
             pnlFilters = New Panel()
             pnlFilters.Dock = DockStyle.Top
-            pnlFilters.Height = 40
+            pnlFilters.Height = 45
             pnlFilters.BackColor = Color.FromArgb(245, 245, 245)
             pnlFilters.BorderStyle = BorderStyle.FixedSingle
+            pnlFilters.AutoScroll = False
             Me.Controls.Add(pnlFilters)
-            pnlFilters.BringToFront()
 
             ' Create labels and textboxes in ONE LINE
             Dim startY As Integer = 8
@@ -97,6 +97,10 @@ Partial Public Class Dashboard
             btnClearFilters.Font = font
             AddHandler btnClearFilters.Click, AddressOf ClearFilters_Click
             pnlFilters.Controls.Add(btnClearFilters)
+
+            ' Make sure panel is visible and in front
+            pnlFilters.Visible = True
+            pnlFilters.BringToFront()
         End If
     End Sub
 
@@ -231,7 +235,7 @@ Partial Public Class Dashboard
     ' ── Main display method ───────────────────────────────────────────────────
 
     Public Sub ShowDifferences(dt As DataTable)
-        ' Initialize filter panel
+        ' Initialize filter panel FIRST (before info label)
         InitializeFilterPanel()
 
         ' Store full data table for filtering
@@ -245,7 +249,11 @@ Partial Public Class Dashboard
             lblInfo.Font = New Font("Segoe UI", 10, FontStyle.Regular)
             lblInfo.ForeColor = Color.DarkBlue
             Me.Controls.Add(lblInfo)
-            lblInfo.BringToFront()
+        End If
+
+        ' Ensure filter panel is on top and visible
+        If pnlFilters IsNot Nothing Then
+            pnlFilters.BringToFront()
         End If
 
         If dt Is Nothing Then
@@ -274,7 +282,7 @@ Partial Public Class Dashboard
             dgvDifferences.Font = New Font("Segoe UI", 12, FontStyle.Regular)
             dgvDifferences.ScrollBars = ScrollBars.Both
             Me.Controls.Add(dgvDifferences)
-            dgvDifferences.BringToFront()
+            ' DO NOT call BringToFront() on DGV - it will hide the filter panel!
             AddHandler dgvDifferences.CellClick, AddressOf dgvDifferences_CellClick
             AddHandler dgvDifferences.CellFormatting, AddressOf dgvDifferences_CellFormatting
         End If
